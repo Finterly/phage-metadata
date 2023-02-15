@@ -1,0 +1,108 @@
+---
+title: "Generate phage metadata"
+---
+
+```{r setup, echo=F,message=F,warning=F}
+############################
+# Greenhouse Lab Defaults! #
+############################
+
+# Knitr Options
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE,
+  fig.width = 15,
+  fig.height = 10
+)
+
+# Function Options
+options(stringsAsFactors = F,
+        row.names = F)
+
+# Libraries
+library(tidyverse)
+library(ggbeeswarm)
+library(RColorBrewer)
+library(Biostrings)
+
+# Set Theme
+theme_set(theme_bw())
+```
+
+Generate New Reference File
+```{r}
+full_targets = readDNAStringSet("./data/plasmodium_T7_display_seqs.fasta")
+truncated_targets = full_targets %>% subseq(start = 22, end = -24)
+translated_targets = translate(truncated_targets, no.init.codon=TRUE) 
+
+targets_table = data.frame(
+  target_with_primer = as.character(full_targets),
+  target = as.character(truncated_targets),
+  peptide = as.character(translated_targets),
+  longname = names(full_targets)
+) %>% 
+  mutate(shortname = paste0("t", 1:n()))
+```
+
+Write fasta with short names
+```{r}
+shortname_targets = truncated_targets
+names(shortname_targets) = targets_table$shortname
+
+writeXStringSet(shortname_targets, "./output/all_falciparome_targets_no_primer.fasta")
+
+
+
+```
+
+
+
+```{r}
+
+## took out: ^AAQ73930 ^AAM55194 ^AJ420411
+idx_header = targets_table %>% 
+  mutate(
+    Strain = coalesce(
+      str_extract(longname, "^PF3D7|PFIT"),
+      str_extract(longname, "^[[:alnum:]]+(?=var)")
+    )) %>% 
+  mutate(Species = ifelse(!is.na(Strain)|str_detect(longname, "^PF|^Plasmodiumfalciparum|^AMA1_Plasmodiumfalciparum| MAL[digit]|3D7"), "P. falciparum", NA) %>% 
+           coalesce(case_when(
+             str_detect(longname, "Human|human") ~"Human",
+             str_detect(longname, "^ano|Anopheles_gambia") ~ "Anopheles",
+             str_detect(longname, "Epstein-Barr") ~ "EBV",
+             str_detect(longname, "Measles") ~ "Measles",
+             str_detect(longname, "poliovirus") ~ "Polio",
+             str_detect(longname, "Rubella") ~ "Rubella",
+             str_detect(longname, "Enterovirus") ~ "Enterovirus",
+             str_detect(longname, "tetanus") ~ "Tetanus",
+             str_detect(longname, regex("rotavirus_b", ignore_case = T)) ~ "Rotavirus B",
+             str_detect(longname, regex("Rotavirus_A", ignore_case = T)) ~ "Rotavirus A",
+             str_detect(longname, "Mumps") ~ "Mumps",
+             str_detect(longname, "Arachis_hypogaea|Peanut|Arachis hypogaea|_ARAHY") ~ "Arachis hypogaea (Peanut)",
+             str_detect(longname, "Alternaria jacinthicola") ~ "Alternaria jacinthicola (Fungus)",
+             str_detect(longname, "Homo_sapiens") ~ "Human",
+             str_detect(longname, "P42212") ~ "Jellyfish (GFP control)",
+             str_detect(longname, "Corynebacterium_diphtheriae") ~ "Diptheria",
+             str_detect(longname, regex("Pertussis", ignore_case = T)) ~ "Pertussis",
+             TRUE ~ "P. falciparum"
+           )),
+         Allergen = ifelse(str_detect(longname, regex("allergen", ignore_case = T)), "Allergen", NA),
+         var = str_extract(longname, "(?<=^.{1,15})var")) %>%
+  #filter(!complete.cases(Species))
+  write.csv("./output/target_metadata.csv", row.names = F)
+```
+
+Checking 
+```{r}
+idx_header$longname %>%
+  str_remove("_seq.*$") %>%
+  unique() %>% 
+  #filter((str_detect(x , "|", "_"))) %>% 
+  view
+
+
+#get a list of all ENA asscensions to put through the scraper
+
+```

@@ -1,0 +1,135 @@
+---
+title: "R Notebook"
+#output: html_notebook
+---
+
+Libraries used
+```{r}
+library(rio)
+library(tidyr)
+library(dplyr)
+library(stringr)
+
+library(httr)
+library(jsonlite) #install.packages(c("httr", "jsonlite"))
+```
+
+Import data.
+```{r}
+import_dat <- import("./output/target_metadata.csv", header=TRUE)
+dat <- import_dat
+#dat1 <- dat0[,-c(1:2)] # remove extra columns
+```
+
+```{r}
+dat$count_longname <- str_count(dat$longname, "\\|") + 1 
+#categories <- unique(dat$count_longname) #10  1  3  5  4
+dat_1 <- dat[dat$count_longname == '1',]
+dat_3 <- dat[dat$count_longname == '3',]
+dat_4 <- dat[dat$count_longname == '4',]
+dat_5 <- dat[dat$count_longname == '5',]
+dat_10 <- dat[dat$count_longname == '10',]
+```
+
+Process 10.1: After query from PlasmoDB. There are 128 gene ids which are not found on PlasmoDB. 
+```{r}
+new_column_names = c('name', 'transcript', 'gene', 'organism', 'gene_product', 'transcript_product', 'location', 'protein_length', 'sequence_SO', 'SO')
+dat_10.2 <- dat_10 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
+
+# Remove unnecessary string (e.g. "transcript="). Optional.
+unnecessary_string_list = c('transcript', 'gene', 'organism', 'gene_product', 'transcript_product', 'location', 'protein_length', 'sequence_SO', 'SO')
+for (val in unnecessary_string_list) {
+  dat_10.2[,val] <- gsub(paste0(val,"="), "\\1", dat_10.2[,val])
+}
+
+# Remove count_longname column. Optional.
+dat_10.3 <- subset(dat_10.2, select=-c(count_longname))
+
+# Make list of gene ids
+genes_10 <- list(unique(dat_10.3$gene))
+invisible(lapply(genes_10, write, "./annotations/genes_10.txt", append=TRUE))
+
+# Identify from PlasmoDB. Can also be found NCBI? 
+# https://plasmodb.org/plasmo/app/search/transcript/GeneByLocusTag 
+```
+
+Process 10.2: 
+```{r}
+# info_10 <- import("./annotations/GeneByLocusTag_Summary_10.csv", header=TRUE)
+input_ids_10 <- list(unique(info_10$"Input ID"))
+not_found_10 <- setdiff(genes_10[[1]],input_ids_10[[1]])
+```
+
+Process 5.1: 
+```{r}
+new_column_names = c('0', '1', 'ref', 'accession', 'definition')
+dat_5.2 <- dat_5 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
+
+# Remove count_longname column. Optional.
+dat_5.3 <- subset(dat_5.2, select=-c(count_longname))
+
+# Make list of gene ids
+genes_5 <- list(unique(dat_5.3$accession))
+invisible(lapply(genes_5, write, "./annotations/genes_5.txt", append=TRUE))
+
+# Identify Proteins from NCBI
+# https://www.ncbi.nlm.nih.gov/protein/
+
+```
+
+
+Process 4.1: 468 rows are missing identifiers
+```{r}
+new_column_names = c('0', 'identifier', '2','3') 
+dat_4.2 <- dat_4 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
+
+# Remove count_longname column. Optional.
+dat_4.3 <- subset(dat_4.2, select=-c(count_longname))
+
+# Make list of gene ids
+genes_4 <- list(unique(dat_4.3$identifier))
+invisible(lapply(genes_4, write, "./annotations/genes_4.txt", append=TRUE))
+
+# Identify Proteins from Uniprot: 
+# https://www.uniprot.org/uniprotkb/
+
+dat_4.2 %>%
+  count(identifier)
+```
+
+Process 3.1: Last column can be further parsed? 
+```{r}
+new_column_names = c('0', 'protein_id', '2') 
+dat_3.2 <- dat_3 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
+
+# Remove count_longname column. Optional.
+dat_3.3 <- subset(dat_3.2, select=-c(count_longname))
+
+# Make list of gene ids
+genes_3 <- list(unique(dat_3.3$protein_id))
+invisible(lapply(genes_3, write, "./annotations/genes_3.txt", append=TRUE))
+
+# Identify Proteins from Uniprot
+# https://www.uniprot.org/uniprotkb/
+
+dat_3.2 %>%
+  count(protein_id)
+```
+
+Process 1.1: 
+Measles/Mumps can be found Uniprot or NCBI
+PlasmoDB can be found on PlasmoDB or NCBI 
+```{r}
+new_column_names = c('0') 
+dat_1.2 <- dat_1
+
+# Remove count_longname column. Optional.
+dat_1.3 <- subset(dat_1.2, select=-c(count_longname))
+```
+
+Add column for duplicates count. Join by peptide sequence for now. 
+```{r}
+
+```
+
+
