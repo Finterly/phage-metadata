@@ -9,9 +9,20 @@ library(rio)
 library(tidyr)
 library(dplyr)
 library(stringr)
-
+library(data.table)
 library(httr)
 library(jsonlite) #install.packages(c("httr", "jsonlite"))
+```
+
+```{r}
+
+replaceFile = TRUE # if true, removes files before writing/appending 
+
+delete_file <- function(fn) {
+  if (file.exists(fn) && replaceFile) {
+    file.remove(fn)
+  }
+}
 ```
 
 Import data.
@@ -31,7 +42,9 @@ dat_5 <- dat[dat$count_longname == '5',]
 dat_10 <- dat[dat$count_longname == '10',]
 ```
 
-Process 10.1: After query from PlasmoDB. There are 128 gene ids which are not found on PlasmoDB. 
+# Parse Longnames --> Identifiers
+
+Process 10.1: **UniProt > Gene Name**. There are 128 gene names which are not found on PlasmoDB. 
 ```{r}
 new_column_names = c('name', 'transcript', 'gene', 'organism', 'gene_product', 'transcript_product', 'location', 'protein_length', 'sequence_SO', 'SO')
 dat_10.2 <- dat_10 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
@@ -45,22 +58,15 @@ for (val in unnecessary_string_list) {
 # Remove count_longname column. Optional.
 dat_10.3 <- subset(dat_10.2, select=-c(count_longname))
 
-# Make list of gene ids
+# Make list of identifiers
 genes_10 <- list(unique(dat_10.3$gene))
+
+# Write list to file
+delete_file("./annotations/genes_10.txt")
 invisible(lapply(genes_10, write, "./annotations/genes_10.txt", append=TRUE))
-
-# Identify from PlasmoDB. Can also be found NCBI? 
-# https://plasmodb.org/plasmo/app/search/transcript/GeneByLocusTag 
 ```
 
-Process 10.2: 
-```{r}
-# info_10 <- import("./annotations/GeneByLocusTag_Summary_10.csv", header=TRUE)
-input_ids_10 <- list(unique(info_10$"Input ID"))
-not_found_10 <- setdiff(genes_10[[1]],input_ids_10[[1]])
-```
-
-Process 5.1: 
+Process 5.1: **Sequence Databases > RefSeq Protein**. The second column is version history number? 
 ```{r}
 new_column_names = c('0', '1', 'ref', 'accession', 'definition')
 dat_5.2 <- dat_5 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
@@ -70,15 +76,14 @@ dat_5.3 <- subset(dat_5.2, select=-c(count_longname))
 
 # Make list of gene ids
 genes_5 <- list(unique(dat_5.3$accession))
+
+# Write list to file
+delete_file("./annotations/genes_5.txt")
 invisible(lapply(genes_5, write, "./annotations/genes_5.txt", append=TRUE))
-
-# Identify Proteins from NCBI
-# https://www.ncbi.nlm.nih.gov/protein/
-
 ```
 
 
-Process 4.1: 468 rows are missing identifiers
+Process 4.1: **Not found error... Organism-specific databases > VEuPathDB**. 468 rows are missing identifiers. 
 ```{r}
 new_column_names = c('0', 'identifier', '2','3') 
 dat_4.2 <- dat_4 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
@@ -88,16 +93,17 @@ dat_4.3 <- subset(dat_4.2, select=-c(count_longname))
 
 # Make list of gene ids
 genes_4 <- list(unique(dat_4.3$identifier))
+
+# Write list to file
+delete_file("./annotations/genes_4.txt")
 invisible(lapply(genes_4, write, "./annotations/genes_4.txt", append=TRUE))
 
-# Identify Proteins from Uniprot: 
-# https://www.uniprot.org/uniprotkb/
-
-dat_4.2 %>%
-  count(identifier)
+# 468 rows are missing identifiers
+#dat_4.2 %>%
+#  count(identifier)
 ```
 
-Process 3.1: Last column can be further parsed? 
+Process 3.1: **UniProt**. Last column can be further parsed? 
 ```{r}
 new_column_names = c('0', 'protein_id', '2') 
 dat_3.2 <- dat_3 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
@@ -105,8 +111,11 @@ dat_3.2 <- dat_3 %>% separate(longname, into = new_column_names, sep = "\\|", re
 # Remove count_longname column. Optional.
 dat_3.3 <- subset(dat_3.2, select=-c(count_longname))
 
-# Make list of gene ids
+# Make list of identifiers
 genes_3 <- list(unique(dat_3.3$protein_id))
+
+# Write list to file
+delete_file("./annotations/genes_1.txt")
 invisible(lapply(genes_3, write, "./annotations/genes_3.txt", append=TRUE))
 
 # Identify Proteins from Uniprot
@@ -120,16 +129,53 @@ Process 1.1:
 Measles/Mumps can be found Uniprot or NCBI
 PlasmoDB can be found on PlasmoDB or NCBI 
 ```{r}
-new_column_names = c('0') 
-dat_1.2 <- dat_1
 
-# Remove count_longname column. Optional.
-dat_1.3 <- subset(dat_1.2, select=-c(count_longname))
+# Containing "var" 
+dat_1_var <- dat_1[dat_1$longname %like% "var", ]
+
+# Make list of identifiers
+genes_1_var <- list(unique(dat_1_var$longname))
+# Write list to file
+delete_file("./annotations/genes_1_var.txt")
+invisible(lapply(genes_1_var, write, "./annotations/genes_1_var.txt", append=TRUE))
+
+##### ####### ###### ###### ###### ###### ######  
+
+# Remaining not containing "var" 
+`%notlike%` <- Negate(`%like%`)
+dat_1.2 <- dat_1[dat_1$longname %notlike% "var", ]
+
+# Trim for string before the first"_[A-Z]" (underscore followed by a letter/non-number)
+dat_1.2$identifier <- sub("\\_[a-zA-Z].*","", dat_1.2$longname)
+
+
+# Make list of identifiers
+genes_1 <- list(unique(dat_1.2$identifier))
+# Write list to file
+delete_file("./annotations/genes_1.txt")
+invisible(lapply(genes_1, write, "./annotations/genes_1.txt", append=TRUE))
+
 ```
+
+
+# Search
+
+UniProt batch retrieve tool: https://www.uniprot.org/id-mapping
+Alternatively, programmatically: https://www.uniprot.org/help/programmatic_access
+https://www.ncbi.nlm.nih.gov/protein/
+
+
+Process 10.2: 
+```{r}
+# info_10 <- import("./annotations/GeneByLocusTag_Summary_10.csv", header=TRUE)
+input_ids_10 <- list(unique(info_10$"Input ID"))
+not_found_10 <- setdiff(genes_10[[1]],input_ids_10[[1]])
+```
+
 
 Add column for duplicates count. Join by peptide sequence for now. 
 ```{r}
-
+()
 ```
 
 
