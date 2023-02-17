@@ -10,15 +10,15 @@ library(tidyr)
 library(dplyr)
 library(stringr)
 library(data.table)
-library(httr)
-library(jsonlite) #install.packages(c("httr", "jsonlite"))
+#library(httr)
+#library(jsonlite) #install.packages(c("httr", "jsonlite"))
 ```
 
 ```{r}
 
 replaceFile = TRUE # if true, removes files before writing/appending 
 
-delete_file <- function(fn) {
+delete_file_if_already_exist <- function(fn) {
   if (file.exists(fn) && replaceFile) {
     file.remove(fn)
   }
@@ -40,11 +40,18 @@ dat_3 <- dat[dat$count_longname == '3',]
 dat_4 <- dat[dat$count_longname == '4',]
 dat_5 <- dat[dat$count_longname == '5',]
 dat_10 <- dat[dat$count_longname == '10',]
+nrow(dat_1)
+nrow(dat_3)
+nrow(dat_4)
+nrow(dat_5)
+nrow(dat_10)
+# Remove count_longname column. Optional.
+dat_3.3 <- subset(dat_3.2, select=-c(count_longname))
 ```
 
 # Parse Longnames --> Identifiers
 
-Process 10.1: **UniProt > Gene Name**. There are 128 gene names which are not found on PlasmoDB. 
+Process 10.1: **Gene Name**
 ```{r}
 new_column_names = c('name', 'transcript', 'gene', 'organism', 'gene_product', 'transcript_product', 'location', 'protein_length', 'sequence_SO', 'SO')
 dat_10.2 <- dat_10 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
@@ -55,127 +62,252 @@ for (val in unnecessary_string_list) {
   dat_10.2[,val] <- gsub(paste0(val,"="), "\\1", dat_10.2[,val])
 }
 
-# Remove count_longname column. Optional.
-dat_10.3 <- subset(dat_10.2, select=-c(count_longname))
-
-# Make list of identifiers
-genes_10 <- list(unique(dat_10.3$gene))
-
-# Write list to file
-delete_file("./annotations/genes_10.txt")
-invisible(lapply(genes_10, write, "./annotations/genes_10.txt", append=TRUE))
+# Write list
+gene_names_10_list <- list(unique(dat_10.2$gene))
+delete_file_if_already_exist("./annotations/gene_names_10.txt")
+invisible(lapply(genenames_10_list, write, "./annotations/gene_names_10.txt", append=TRUE))
 ```
 
-Process 5.1: **Sequence Databases > RefSeq Protein**. The second column is version history number? 
+Process 5.1: **RefSeq Protein**. The second column is version history number? 
 ```{r}
-new_column_names = c('0', '1', 'ref', 'accession', 'definition')
+new_column_names = c('0', '1', 'ref', 'identifier', 'definition')
 dat_5.2 <- dat_5 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
 
-# Remove count_longname column. Optional.
-dat_5.3 <- subset(dat_5.2, select=-c(count_longname))
-
-# Make list of gene ids
-genes_5 <- list(unique(dat_5.3$accession))
-
-# Write list to file
-delete_file("./annotations/genes_5.txt")
-invisible(lapply(genes_5, write, "./annotations/genes_5.txt", append=TRUE))
+# Write list
+refseq_prot_5_list <- list(unique(dat_5.2$identifier))
+delete_file_if_already_exist("./annotations/refseq_prot_5.txt")
+invisible(lapply(refseq_prot_5_list, write, "./annotations/refseq_prot_5.txt", append=TRUE))
 ```
 
 
-Process 4.1: **Not found error... Organism-specific databases > VEuPathDB**. 468 rows are missing identifiers. 
+Process 4.1: **VEuPathDB:vectorbase:**. Filter out longnames with nonstandard formatting
+We filter out the following **manually identified** strings: 
+- [blank] 468 rows are missing identifiers. 
+- Calvo_et_al
+- GI:
+
+We fix: 
+- !
+- AMEC009308_AMEC013632
 ```{r}
 new_column_names = c('0', 'identifier', '2','3') 
 dat_4.2 <- dat_4 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
 
-# Remove count_longname column. Optional.
-dat_4.3 <- subset(dat_4.2, select=-c(count_longname))
+# Filter out longnames with nonstandard formatting 
+dat_4.2_other <- dat_4.2[dat_4.2$identifier == "" | dat_4.2$longname %like% "Calvo_et_al" | dat_4.2$longname %like% "GI:", ]
+# Write list 
+delete_file_if_already_exist("./annotations/not_found/list_4_other.txt")
+invisible(lapply(list(unique(dat_4.2_other$longname)), write, "./annotations/not_found/list_4_other.txt", append=TRUE))
 
-# Make list of gene ids
-genes_4 <- list(unique(dat_4.3$identifier))
+# Process remaining rows
+`%notlike%` <- Negate(`%like%`)
+dat_4.3 <- dat_4.2[dat_4.2$identifier != "" & dat_4.2$longname %notlike% "Calvo_et_al" & dat_4.2$longname %notlike% "GI", ]
+dat_4.3$identifier <- sub("\\_[a-zA-Z].*","", dat_4.3$identifier) # parse "AMEC009308_AMEC013632" to "AMEC009308"
+dat_4.3$identifier <- sub("!","", dat_4.3$identifier) # remove "!"
+dat_4.3$vectorbase_identifier <- paste0("vectorbase:", dat_4.3$identifier) # add column for search
 
-# Write list to file
-delete_file("./annotations/genes_4.txt")
-invisible(lapply(genes_4, write, "./annotations/genes_4.txt", append=TRUE))
-
-# 468 rows are missing identifiers
-#dat_4.2 %>%
-#  count(identifier)
+# Write list
+delete_file_if_already_exist("./annotations/veupathdb_4.txt")
+invisible(lapply(list(unique(dat_4.3$vectorbase_identifier)), write, "./annotations/veupathdb_4.txt", append=TRUE))
 ```
 
 Process 3.1: **UniProt**. Last column can be further parsed? 
 ```{r}
-new_column_names = c('0', 'protein_id', '2') 
+new_column_names = c('0', 'identifier', '2') 
 dat_3.2 <- dat_3 %>% separate(longname, into = new_column_names, sep = "\\|", remove = FALSE)
 
-# Remove count_longname column. Optional.
-dat_3.3 <- subset(dat_3.2, select=-c(count_longname))
-
-# Make list of identifiers
-genes_3 <- list(unique(dat_3.3$protein_id))
-
-# Write list to file
-delete_file("./annotations/genes_1.txt")
-invisible(lapply(genes_3, write, "./annotations/genes_3.txt", append=TRUE))
-
-# Identify Proteins from Uniprot
-# https://www.uniprot.org/uniprotkb/
-
-dat_3.2 %>%
-  count(protein_id)
+# Write list
+uniprot_3_list <- list(unique(dat_3.2$identifier))
+delete_file_if_already_exist("./annotations/uniprot_3.txt")
+invisible(lapply(uniprot_3_list, write, "./annotations/uniprot_3.txt", append=TRUE))
 ```
 
-Process 1.1: 
-Measles/Mumps can be found Uniprot or NCBI
-PlasmoDB can be found on PlasmoDB or NCBI 
+Process 1.1: Filter out longnames with nonstandard formatting
+We filter out the following **manually identified** strings: 
+- var
+- Surfin4.2
+- MSPDBL1
+- MSPDBL2
+- _SG6_reference_seq1
+- PFIT_bin
+- AMA1
 ```{r}
+# Filter out longnames with nonstandard formatting 
+dat_1_other <- dat_1[dat_1$longname %like% "var" | dat_1$longname %like% "Surfin4.2" | dat_1$longname %like% "MSPDBL1" | dat_1$longname %like% "MSPDBL2" | dat_1$longname %like% "_SG6_reference" | dat_1$longname %like% "PFIT_bin"| dat_1$longname %like% "AMA1", ]
+# Write list 
+delete_file_if_already_exist("./annotations/not_found/list_1_other.txt")
+invisible(lapply(list(unique(dat_1_other$longname)), write, "./annotations/not_found/list_1_other.txt", append=TRUE))
 
-# Containing "var" 
-dat_1_var <- dat_1[dat_1$longname %like% "var", ]
-
-# Make list of identifiers
-genes_1_var <- list(unique(dat_1_var$longname))
-# Write list to file
-delete_file("./annotations/genes_1_var.txt")
-invisible(lapply(genes_1_var, write, "./annotations/genes_1_var.txt", append=TRUE))
-
-##### ####### ###### ###### ###### ###### ######  
-
-# Remaining not containing "var" 
+# Remaining rows (not filtered out) 
 `%notlike%` <- Negate(`%like%`)
-dat_1.2 <- dat_1[dat_1$longname %notlike% "var", ]
+dat_1.2 <- dat_1[dat_1$longname %notlike% "var" & dat_1$longname %notlike% "Surfin4.2" & dat_1$longname %notlike% "MSPDBL1" & dat_1$longname %notlike% "MSPDBL2" & dat_1$longname %notlike% "_SG6_reference" & dat_1$longname %notlike% "PFIT_bin" & dat_1$longname %notlike% "AMA1", ]
 
 # Trim for string before the first"_[A-Z]" (underscore followed by a letter/non-number)
 dat_1.2$identifier <- sub("\\_[a-zA-Z].*","", dat_1.2$longname)
 
+# Count peptides 
+nrow(dat_1_other) # 27156 nonstardard longnames
+nrow(dat_1.2) # 6968 remaining peptides
+```
 
-# Make list of identifiers
-genes_1 <- list(unique(dat_1.2$identifier))
-# Write list to file
-delete_file("./annotations/genes_1.txt")
-invisible(lapply(genes_1, write, "./annotations/genes_1.txt", append=TRUE))
+Process 1.2: Filter by Species 
+Mumps, Human, Enterovirus, Measles, Rubella: 
+- Mostly **EMBL-GenBank-DDBJ_CDS** 
+P.falciparum strains: 
+- Some **EMBL-GenBank-DDBJ** 
+- Some **PlasmoDB**
+Tetanus, Diptheria, Pertussis: 
+- Some **RefSeq** 
+```{r}
+# P.falciparum 
+dat_1_pf <- dat_1.2[dat_1.2$Species == 'P. falciparum',]
+# Write list
+pf_1_list <- list(unique(dat_1_pf$identifier))
+delete_file_if_already_exist("./annotations/pf_1.txt")
+invisible(lapply(pf_1_list, write, "./annotations/pf_1.txt", append=TRUE))
+
+# Mumps, Human, Enterovirus, Measles, Rubella
+dat_1_embl_prot <- subset(dat_1.2, dat_1.2$Species %in% c('Mumps','Human','Enterovirus','Measles','Rubella'))
+# Write list
+embl_prot_1_list <- list(unique(dat_1_embl_prot$identifier))
+delete_file_if_already_exist("./annotations/embl_prot_1.txt")
+invisible(lapply(embl_prot_1_list, write, "./annotations/embl_prot_1.txt", append=TRUE))
+
+# Tetanus, Diptheria, Pertussis
+dat_1_refseq_prot <- subset(dat_1.2, dat_1.2$Species %in% c('Tetanus','Diptheria','Pertussis'))
+# Write list
+refseq_prot_1_list <- list(unique(dat_1_refseq_prot$identifier))
+delete_file_if_already_exist("./annotations/refseq_prot_1.txt")
+invisible(lapply(refseq_prot_1_list, write, "./annotations/refseq_prot_1.txt", append=TRUE))
+```
+
+# Evaluate
+
+Programmatically: 
+https://www.uniprot.org/help/id_mapping
+https://www.biostars.org/p/9528992/
+
+Load Data
+```{r}
+gene_names_10 <- import("./annotations/gene_names_10.tsv", header=TRUE)
+refseq_prot_5 <- import("./annotations/refseq_prot_5.tsv", header=TRUE)
+veupathdb_4 <- import("./annotations/veupathdb_4.tsv", header=TRUE)
+uniprot_3 <- import("./annotations/uniprot_3.tsv", header=TRUE)
+refseq_prot_1 <- import("./annotations/refseq_prot_1.tsv", header=TRUE)
+embl_prot_1 <- import("./annotations/embl_prot_1.tsv", header=TRUE)
 
 ```
 
+#Compare
 
-# Search
-
-UniProt batch retrieve tool: https://www.uniprot.org/id-mapping
-Alternatively, programmatically: https://www.uniprot.org/help/programmatic_access
-https://www.ncbi.nlm.nih.gov/protein/
-
-
-Process 10.2: 
+gene_names_10: 4994 hits (4728 unique values). Not found 1591 (previous names/aliases) -> but can be found on **plasmodb.org!**
+Finally there is 128 Not found. 
 ```{r}
-# info_10 <- import("./annotations/GeneByLocusTag_Summary_10.csv", header=TRUE)
-input_ids_10 <- list(unique(info_10$"Input ID"))
-not_found_10 <- setdiff(genes_10[[1]],input_ids_10[[1]])
+gene_names_10_from <- list(unique(gene_names_10$"From"))
+gene_names_10_failed <- setdiff(gene_names_10_list[[1]],gene_names_10_from[[1]])
+
+gene_names_10 %>%
+  count(From) %>% 
+  filter(n > 1)
+
+# Next Step
+delete_file_if_already_exist("./annotations/plasmodb_10.txt")
+invisible(lapply(gene_names_10_failed, write, "./annotations/plasmodb_10.txt", append=TRUE))
+
+plasmodb_10 <- import("./annotations/plasmodb_10.csv", header=TRUE)
+plasmodb_10_from <- list(unique(plasmodb_10$"Input ID"))
+
+# Final Fails. 
+all_from_10 <- mapply(c, gene_names_10_from, plasmodb_10_from, SIMPLIFY=FALSE)
+all_failed_10 <- setdiff(gene_names_10_list[[1]],all_from_10[[1]])
 ```
 
-
-Add column for duplicates count. Join by peptide sequence for now. 
+refseq_prot_5: All 17 found (19 hits)
 ```{r}
-()
+refseq_prot_5_from <- list(unique(refseq_prot_5$"From"))
+refseq_prot_5_failed <- setdiff(refseq_prot_5_list[[1]],refseq_prot_5_from[[1]])
+
+refseq_prot_5 %>%
+  count(From) %>% 
+  filter(n > 1)
+```
+
+veupathdb_4: 604 hits (439 unique values). Not found 96 (previous names/aliases) -> but can be found on **vectorbase.org!**  
+```{r}
+
+veupathdb_4_list <- list(unique(dat_4.3$identifier))
+from_output <- list(unique(veupathdb_4$"From")) # correct for string "vectorbase:
+
+veupathdb_4_from <- sub("vectorbase:","", from_output)
+veupathdb_4_failed <- setdiff(veupathdb_4_list[[1]],veupathdb_4_from[[1]])
+
+veupathdb_4 %>%
+  count(From) %>% 
+  filter(n > 1)
+
+# Next Step
+delete_file_if_already_exist("./annotations/vectorbase_4.txt")
+invisible(lapply(sub("\\vectorbase:","", veupathdb_4_failed), write, "./annotations/vectorbase_4.txt", append=TRUE))
+
+vectorbase_4 <- import("./annotations/vectorbase_4.csv", header=TRUE)
+vectorbase_4_from <- list(unique(vectorbase_4$"Input ID"))
+
+# Final Fails. 
+all_from_4 <- mapply(c, veupathdb_4_from, vectorbase_4, SIMPLIFY=FALSE)
+all_failed_4 <- setdiff(veupathdb_4_list[[1]],all_from_4[[1]])
+```
+
+uniprot_3: all 605 found (605 hits)
+```{r}
+uniprot_3_from <- list(unique(uniprot_3$"From"))
+uniprot_3_failed <- setdiff(uniprot_3_list[[1]],uniprot_3_from[[1]])
+
+uniprot_3 %>%
+  count(From) %>% 
+  filter(n > 1)
+```
+
+refseq_prot_1: 10 hits (4 unique values). Not found 4 -> but can be found on **ncbi!**  
+```{r}
+refseq_prot_1_from <- list(unique(refseq_prot_1$"From"))
+refseq_prot_1_failed <- setdiff(refseq_prot_1_list[[1]],refseq_prot_1_from[[1]])
+
+refseq_prot_1 %>%
+  count(From) %>% 
+  filter(n > 1)
+```
+
+embl_prot_1: All 47 found (47 hits)
+```{r}
+embl_prot_1_from <- list(unique(embl_prot_1$"From"))
+embl_prot_1_failed <- setdiff(embl_prot_1_list[[1]],embl_prot_1_from[[1]])
+
+embl_prot_1 %>%
+  count(From) %>% 
+  filter(n > 1)
+```
+
+pf_1: Use **PlasmoDB, Embl_Prot AND Embl**. Not found 5 --> Manually fix --> Not found 2
+```{r}
+pf_1_plasmodb <- import("./annotations/pf_1_plasmodb.csv", header=TRUE)
+pf_1_embl <- import("./annotations/pf_1_embl.tsv", header=TRUE)
+pf_1_embl_prot <- import("./annotations/pf_1_embl_prot.tsv", header=TRUE)
+
+pf_1_plasmodb_from <- list(unique(pf_1_plasmodb$"Input ID"))
+pf_1_plasmodb_failed <- setdiff(pf_1_list[[1]],pf_1_plasmodb_from[[1]])
+
+pf_1_embl_from <- list(unique(pf_1_embl$"From"))
+pf_1_embl_failed <- setdiff(pf_1_list[[1]],pf_1_embl_from[[1]])
+
+pf_1_embl_prot_from <- list(unique(pf_1_embl_prot$"From"))
+pf_1_embl_prot_failed <- setdiff(pf_1_list[[1]],pf_1_embl_prot_from[[1]])
+
+# really failed... 
+all_from <- mapply(c, pf_1_plasmodb_from, pf_1_embl_from,pf_1_embl_prot_from, SIMPLIFY=FALSE)
+all_failed <- setdiff(pf_1_list[[1]],all_from[[1]])
+# [1] "PFF0020c"     "PF07_0050_"   "MAL6P1.314"   "PFIT_0801500" "PFIT_0800940"
+# Really cannot find are PFIT_0801500 and PFIT_0800940
+
 ```
 
 
